@@ -26,9 +26,8 @@
         docker_host: "unix://var/run/docker.sock"
         name: "dind"
         image: "docker:dind"
-        restart_policy: false
         state: started
-        auto_remove: false
+        restart_policy: unless-stopped
         recreate: false
         privileged: true
         env:
@@ -52,7 +51,6 @@
         name: "{{ mysql_container_name }}"
         image: "{{ mysql_container_image }}"
         restart_policy: unless-stopped
-        auto_remove: false
         state: started
         env:
           MYSQL_ROOT_PASSWORD: "{{ mysql_root_password }}"
