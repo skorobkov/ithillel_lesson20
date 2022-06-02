@@ -1,0 +1,91 @@
+- name: Lesson 20
+  hosts: localhost
+  gather_facts: false
+  vars:
+    mysql_container_image: "mysql:latest"
+    mysql_container_name: db
+    mysql_root_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      35633563323239333262663562366462653662333335613039303332343635303061636336646565
+      3466653435306331363836313264343432656164333365370a363661336137306361333963633331
+      36323065376261303138643935343466316461383166613435646464623837343335623563373431
+      3332306535396362340a646661383964343733303063313337356539373739303237633362663664
+      33663138393965653639643663626634623366333330643437346265306537393539
+    mysql_db: my_db
+    mysql_user_name: my_user
+    mysql_user_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      34363134303332616631653437343731643839316563396166663431346363636531656564333765
+      3533363163656130353363666336396330343537333732610a396131303137663832633030623564
+      33343433616161343536616164336132373239333832326336363933313864366637366531373432
+      3964386335316465380a386364643137663764316637353137636230396231356631623837653633
+      62383033373966326664303037353331383362383431653133393366616637623239
+  pre_tasks:
+    - name: Start docker container
+      community.docker.docker_container:
+        docker_host: "unix://var/run/docker.sock"
+        name: "dind"
+        image: "docker:dind"
+        restart_policy: false
+        state: started
+        auto_remove: false
+        recreate: false
+        privileged: true
+        env:
+          DOCKER_TLS_CERTDIR: ""
+        published_ports:
+          - 127.0.0.1:2375:2375
+          - 3306:3306
+
+    - name: Wait connection to docker
+      community.docker.docker_host_info:
+        docker_host: tcp://127.0.0.1:2375
+      register: dind_rc
+      until: dind_rc.host_info.ServerVersion is defined and dind_rc.host_info.ServerVersion != ""
+      retries: 10
+      delay: 3
+
+  tasks:
+    - name: Start MySQL container
+      community.docker.docker_container:
+        docker_host: tcp://127.0.0.1:2375
+        name: "{{ mysql_container_name }}"
+        image: "{{ mysql_container_image }}"
+        restart_policy: unless-stopped
+        auto_remove: false
+        state: started
+        env:
+          MYSQL_ROOT_PASSWORD: "{{ mysql_root_password }}"
+        published_ports:
+          - 3306:3306
+
+    - name: Wait connection to mysql
+      community.mysql.mysql_info:
+        login_host: 127.0.0.1
+        login_password: "{{ mysql_root_password }}"
+        login_user: root
+        login_port: 3306
+      register: mysql_info_rc
+      until: mysql_info_rc.version.full is defined and mysql_info_rc.version.full != ""
+      retries: 10
+      delay: 3
+
+    - name: Create mysql table
+      community.mysql.mysql_db:
+        name: "{{ mysql_db }}"
+        login_host: 127.0.0.1
+        login_password: "{{ mysql_root_password }}"
+        login_user: root
+        login_port: 3306
+        state: present
+
+    - name: Create mysql user
+      community.mysql.mysql_user:
+        name: "{{ mysql_user_name }}"
+        password: "{{ mysql_user_password }}"
+        priv: "{{ mysql_db }}.*:ALL"
+        login_host: 127.0.0.1
+        login_password: "{{ mysql_root_password }}"
+        login_user: root
+        login_port: 3306
+        state: present
